@@ -25,6 +25,19 @@ git branch -r | grep -E 'origin/(main|develop)' | head -5
 
 Use the result (prefer `develop` if both exist, otherwise `main`) as `BASE_BRANCH` for the rest of the steps.
 
+## Step 0c: Rebase onto latest base branch
+
+Fetch and rebase the current branch onto the latest `origin/<BASE_BRANCH>` before doing anything else:
+
+```bash
+git fetch origin
+git rebase origin/<BASE_BRANCH>
+```
+
+- If the rebase succeeds cleanly, proceed.
+- If the rebase has conflicts, abort it (`git rebase --abort`), stop, and tell the user: "Rebase onto `<BASE_BRANCH>` has conflicts — please resolve them manually, then re-run this command."
+- If the current branch IS `<BASE_BRANCH>`, skip the rebase (nothing to rebase onto itself) and just run `git fetch origin`.
+
 ## Step 1: Commit changes
 
 Run `git status` to check for uncommitted changes (staged or unstaged).
@@ -46,8 +59,9 @@ If there are no uncommitted changes, run `git fetch origin` and then `git log or
 Check the current branch with `git branch --show-current`.
 
 - If the current branch is `<BASE_BRANCH>`:
-  - Run `git log <BASE_BRANCH>..HEAD --oneline` to read only the commits newly added on this branch.
-  - Derive a branch name from the most relevant commit(s): use the conventional prefix (`feat/`, `fix/`, `chore/`, etc.) from the commit type, then a short kebab-case slug of the subject. Example: `feat: add login screen` → `feat/add-login-screen`.
+  - Run `git log <BASE_BRANCH>..HEAD --oneline` to check for commits ahead of base.
+  - **If commits exist**: derive the branch name from the most relevant commit(s) — use the conventional prefix (`feat/`, `fix/`, `chore/`, etc.) from the commit type, then a short kebab-case slug of the subject. Example: `feat: add login screen` → `feat/add-login-screen`.
+  - **If no commits exist** (only uncommitted changes): run `git diff --staged` and `git diff` to read the actual changes. Infer the branch name from: the files modified (e.g. which feature/module they belong to), the nature of the changes (new code = `feat/`, bug fix = `fix/`, config/tooling = `chore/`), and any meaningful symbol names or strings in the diff. Produce a short kebab-case slug that describes what changed. Example: modified `AuthViewModel.kt` to fix a token refresh bug → `fix/auth-token-refresh`.
   - Use AskUserQuestion to show the suggested name and ask the user to confirm or provide a different name (offer the suggestion as the first option).
   - Create and checkout the new branch: `git checkout -b <branch-name>`
 - If the current branch is anything other than `<BASE_BRANCH>`, stay on that branch and proceed.
@@ -60,12 +74,14 @@ Check whether a `.github/PULL_REQUEST_TEMPLATE/` directory exists:
 ls .github/PULL_REQUEST_TEMPLATE/ 2>/dev/null
 ```
 
-**If templates are found**, use AskUserQuestion to ask the user which PR template to use. Offer options based on the files present — common ones are:
-- `Feature` (default) → `.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`
-- `Bug` → `.github/PULL_REQUEST_TEMPLATE/bugfix_pull_request_template.md`
-- `Tech` → `.github/PULL_REQUEST_TEMPLATE/tech_pull_request_template.md`
+**If templates are found**, auto-select the template based on the current branch name using this priority order:
 
-Only offer options for files that actually exist. Mark `Feature` (or the first available option) as the recommended/default.
+1. **Bug template** (`.github/PULL_REQUEST_TEMPLATE/bugfix_pull_request_template.md`) — if the branch name contains any of: `fix/`, `bugfix/`, `hotfix/`, `bug/`
+2. **Tech template** (`.github/PULL_REQUEST_TEMPLATE/tech_pull_request_template.md`) — if the branch name contains any of: `chore/`, `tech/`, `refactor/`, `ci/`, `build/`, `infra/`
+3. **Feature template** (`.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`) — if the branch name contains any of: `feat/`, `feature/`
+4. **Ask the user** — if the branch name doesn't match any pattern above, use AskUserQuestion to ask which template to use. Offer only the options whose files actually exist, and mark `Feature` (or the first available) as the recommended/default.
+
+Only auto-select a template if the corresponding file actually exists. If the auto-selected file doesn't exist, fall through to the next match or ask the user.
 
 **If no templates are found**, also check for a single template at `.github/pull_request_template.md`. If that exists, use it without asking.
 
